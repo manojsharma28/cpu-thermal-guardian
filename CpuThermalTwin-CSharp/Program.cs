@@ -7,7 +7,7 @@ class Program
 {
     private static ThermalMonitor? _monitor;
 
-    static async Task Main(string[] args)
+    static void Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.WriteLine("╔═══════════════════════════════════════════╗");
@@ -20,7 +20,7 @@ class Program
             // Configuration
             string influxUrl = "http://localhost:8181";
             string bucket = "cpu_twin";
-            string organization = "";
+            string organization = "my-org";  // InfluxDB requires non-empty org
 
             // Initialize thermal monitor
             _monitor = new ThermalMonitor(influxUrl, bucket, organization);
@@ -37,7 +37,7 @@ class Program
                 };
 
                 // Start monitoring
-                await _monitor.StartMonitoringAsync(cts.Token);
+                _monitor.StartMonitoring(cts.Token);
             }
         }
         catch (Exception ex)

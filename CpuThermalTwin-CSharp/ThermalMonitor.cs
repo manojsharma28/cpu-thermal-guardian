@@ -43,9 +43,9 @@ public class ThermalMonitor
         try
         {
             // Initialize InfluxDB client (no auth for dev mode)
-            var options = new InfluxDBClientOptions(_influxUrl);
-            _client = new InfluxDBClient(options);
-            _writeApi = _client.GetWriteApi(WritePrecision.Ns);
+            var builder = InfluxDBClientFactory.Create(_influxUrl);
+            _client = builder;
+            _writeApi = _client.GetWriteApi();
 
             // Initialize CPU performance counter
             _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
@@ -96,12 +96,11 @@ public class ThermalMonitor
     /// <summary>
     /// Sends thermal data to InfluxDB
     /// </summary>
-    private async Task SendThermalDataAsync(float cpuLoad, float actualTemp, float predictedTemp)
+    private void SendThermalData(float cpuLoad, float actualTemp, float predictedTemp)
     {
         try
         {
             var point = PointData.Measurement("thermal_stats")
-                .Timestamp(DateTime.UtcNow, WritePrecision.Ns)
                 .Field("actual_temp", actualTemp)
                 .Field("predicted_temp", predictedTemp)
                 .Field("cpu_load", cpuLoad);
@@ -117,7 +116,7 @@ public class ThermalMonitor
     /// <summary>
     /// Main monitoring loop - runs continuously until stopped
     /// </summary>
-    public async Task StartMonitoringAsync(CancellationToken cancellationToken = default)
+    public void StartMonitoring(CancellationToken cancellationToken = default)
     {
         _isRunning = true;
         Console.WriteLine("🚀 Digital Twin active... Press Ctrl+C to stop.\n");
@@ -132,19 +131,22 @@ public class ThermalMonitor
                 float predictedTemp = GetPredictedTemp(cpuLoad);
 
                 // Send to InfluxDB
-                await SendThermalDataAsync(cpuLoad, actualTemp, predictedTemp);
+                SendThermalData(cpuLoad, actualTemp, predictedTemp);
 
                 // Display output
                 Console.WriteLine(
                     $"Load: {cpuLoad:F1}% | Actual: {actualTemp:F2}°C | Predicted: {predictedTemp:F2}°C");
 
                 // Wait before next collection (1 second)
-                await Task.Delay(1000, cancellationToken);
+                try
+                {
+                    Task.Delay(1000, cancellationToken).Wait(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            Console.WriteLine("\n❌ Monitoring stopped by user.");
         }
         catch (Exception ex)
         {
