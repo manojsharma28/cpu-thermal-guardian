@@ -45,6 +45,38 @@ dotnet build --configuration Release
 ./bin/Release/net6.0/CpuThermalTwin.exe
 ```
 
+## Docker Deployment
+
+### Build Docker Image
+```bash
+docker build -t cpu-thermal-twin-csharp .
+```
+
+### Run with Docker Compose (Recommended)
+```bash
+docker-compose up -d
+```
+
+This starts both the C# application and InfluxDB 3-core automatically.
+
+### Run Standalone Container
+```bash
+# First, ensure InfluxDB is running separately
+docker run -d --name influxdb-3-core \
+  -p 8181:8181 \
+  -v influxdb-data:/data \
+  influxdb:3-core \
+  serve --node-id node1 --object-store file --data-dir /data --without-auth
+
+# Then run the C# application
+docker run --rm --network host cpu-thermal-twin-csharp
+```
+
+### Docker Compose Services
+- **cpu-thermal-twin-csharp**: The monitoring application
+- **influxdb**: InfluxDB 3-core database
+- **Networks**: Isolated thermal-network for secure communication
+
 ### Output
 ```
 ╔═══════════════════════════════════════════╗

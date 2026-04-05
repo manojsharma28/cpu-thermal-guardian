@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  cpu-thermal-twin-csharp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cpu-thermal-twin-csharp
+    depends_on:
+      - influxdb
+    networks:
+      - thermal-network
+    restart: unless-stopped
+    # Uncomment the line below if you want to run with host networking to access local InfluxDB
+    # network_mode: host
+
+  influxdb:
+    image: influxdb:3-core
+    container_name: influxdb-3-core
+    ports:
+      - "8181:8181"
+    volumes:
+      - influxdb-data:/data
+    environment:
+      - INFLUXDB_HTTP_BIND_ADDRESS=:8181
+      - INFLUXDB_DATA_ENGINE=tsm1
+    networks:
+      - thermal-network
+    command: serve --node-id node1 --object-store file --data-dir /data --without-auth
+
+volumes:
+  influxdb-data:
+
+networks:
+  thermal-network:
+    driver: bridge
