@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Management;
 using System.Threading;
 using System.Threading.Tasks;
 using InfluxDB.Client;
@@ -47,6 +48,8 @@ public class ThermalMonitor
             var builder = InfluxDBClientFactory.Create(_influxUrl);
             _client = builder;
             _writeApi = _client.GetWriteApi();
+
+            GetFanSpeed();
 
             // Initialize CPU monitoring (platform-specific)
             if (OperatingSystem.IsWindows())
@@ -261,6 +264,36 @@ public class ThermalMonitor
         {
             _isRunning = false;
         }
+    }
+
+    /// <summary>
+    /// Gets current CPU fan speed via WMI (Windows-only)
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private float GetFanSpeed()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return 0f;
+        }
+
+        try
+        {
+            var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_Fan");
+            foreach (ManagementObject fan in searcher.Get())
+            {
+                object? speed = fan["DesiredSpeed"];
+                if (speed != null && uint.TryParse(speed.ToString(), out uint fanSpeed))
+                {
+                    return fanSpeed;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Error reading fan speed: {ex.Message}");
+        }
+        return 0f;
     }
 
     /// <summary>

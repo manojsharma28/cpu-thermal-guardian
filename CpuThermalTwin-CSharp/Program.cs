@@ -5,7 +5,8 @@ using CpuThermalTwin;
 
 class Program
 {
-    private static ThermalMonitor? _monitor;
+    private static ThermalMonitor? _thermalMonitor;
+    private static SystemMonitor? _systemMonitor;
 
     static void Main(string[] args)
     {
@@ -23,8 +24,12 @@ class Program
             string organization = "my-org";  // InfluxDB requires non-empty org
 
             // Initialize thermal monitor
-            _monitor = new ThermalMonitor(influxUrl, bucket, organization);
-            _monitor.Initialize();
+            _thermalMonitor = new ThermalMonitor(influxUrl, bucket, organization);
+            _thermalMonitor.Initialize();
+
+            // Initialize system monitor
+            _systemMonitor = new SystemMonitor(influxUrl, bucket, organization);
+            _systemMonitor.Initialize();
 
             // Setup graceful shutdown
             using (var cts = new CancellationTokenSource())
@@ -33,11 +38,15 @@ class Program
                 {
                     e.Cancel = true;
                     cts.Cancel();
-                    _monitor.Stop();
+                    _thermalMonitor.Stop();
                 };
 
-                // Start monitoring
-                _monitor.StartMonitoring(cts.Token);
+                // Start monitoring tasks
+             //   var thermalTask = Task.Run(() => RunThermalMonitoring(cts.Token));
+                var systemTask = Task.Run(() => RunSystemMonitoring(cts.Token));
+
+                // Wait for both tasks
+                Task.WaitAll( systemTask);
             }
         }
         catch (Exception ex)
@@ -48,8 +57,37 @@ class Program
         }
         finally
         {
-            _monitor?.Dispose();
+            _thermalMonitor?.Dispose();
+            _systemMonitor?.Dispose();
             Console.WriteLine("\n✓ Cleanup complete. Goodbye!");
+        }
+    }
+
+    private static void RunThermalMonitoring(CancellationToken cancellationToken)
+    {
+        Console.WriteLine("🚀 Starting thermal monitoring...");
+        _thermalMonitor?.StartMonitoring(cancellationToken);
+    }
+
+    private static void RunSystemMonitoring(CancellationToken cancellationToken)
+    {
+        Console.WriteLine("🚀 Starting system monitoring...");
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                _systemMonitor?.MonitorAll();
+                Task.Delay(5000, cancellationToken).Wait(cancellationToken); // Monitor every 5 seconds
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when cancelled
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ System monitoring error: {ex.Message}");
         }
     }
 }
