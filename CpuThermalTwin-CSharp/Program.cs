@@ -22,13 +22,17 @@ class Program
             string influxUrl = "http://localhost:8181";
             string bucket = "cpu_twin";
             string organization = "my-org";  // InfluxDB requires non-empty org
+            
+            // TODO: Add your InfluxDB API token here (leave empty for dev mode without auth)
+            // Get token from InfluxDB UI: Settings > Tokens > Generate Token
+            string influxToken = "kC7seiVzLUvLUir_SafPfTpwwttRWD0Pr8kIwIORXc9wZIFvK0IMF9wR_-JM6K0zWRZ4J_bWc9CkPKvMzS1Jpw==";  // Replace with your actual token: "your-api-token-here"
 
             // Initialize thermal monitor
-            _thermalMonitor = new ThermalMonitor(influxUrl, bucket, organization);
+            _thermalMonitor = new ThermalMonitor(influxUrl, bucket, organization, influxToken);
             _thermalMonitor.Initialize();
 
             // Initialize system monitor
-            _systemMonitor = new SystemMonitor(influxUrl, bucket, organization);
+            _systemMonitor = new SystemMonitor(influxUrl, bucket, organization, influxToken);
             _systemMonitor.Initialize();
 
             // Setup graceful shutdown
@@ -42,11 +46,11 @@ class Program
                 };
 
                 // Start monitoring tasks
-             //   var thermalTask = Task.Run(() => RunThermalMonitoring(cts.Token));
+                var thermalTask = Task.Run(() => RunThermalMonitoring(cts.Token));
                 var systemTask = Task.Run(() => RunSystemMonitoring(cts.Token));
 
                 // Wait for both tasks
-                Task.WaitAll( systemTask);
+                Task.WaitAll( thermalTask, systemTask);
             }
         }
         catch (Exception ex)

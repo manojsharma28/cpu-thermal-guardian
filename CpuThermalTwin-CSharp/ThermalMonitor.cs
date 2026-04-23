@@ -21,6 +21,7 @@ public class ThermalMonitor
     private readonly string _influxUrl;
     private readonly string _bucket;
     private readonly string _organization;
+    private readonly string _token;
 
     private InfluxDBClient? _client;
     private WriteApi? _writeApi;
@@ -28,12 +29,14 @@ public class ThermalMonitor
     private bool _isRunning;
 
     public ThermalMonitor(string influxUrl = "http://localhost:8181", 
-                          string bucket = "cpu_twin", 
-                          string organization = "")
+                          string bucket = "cpu_twin",
+                          string organization = "my-org",
+                          string token = "m059h1pXi207pnn4ADkijJ3EIFa06TqR14IL4G326WkfReV_CjaTs7ukqoCCrKFbTk8X_-RmjnOiDRuaGpmMWQ==")
     {
         _influxUrl = influxUrl;
         _bucket = bucket;
         _organization = organization;
+        _token = token;
         _isRunning = false;
     }
 
@@ -44,8 +47,18 @@ public class ThermalMonitor
     {
         try
         {
-            // Initialize InfluxDB client (no auth for dev mode)
-            var builder = InfluxDBClientFactory.Create(_influxUrl);
+            // Initialize InfluxDB client with or without auth
+            InfluxDBClient? builder;
+            if (!string.IsNullOrEmpty(_token))
+            {
+                // With authentication token
+                builder = InfluxDBClientFactory.Create(_influxUrl, _token.ToCharArray());
+            }
+            else
+            {
+                // Without authentication (dev mode)
+                builder = InfluxDBClientFactory.Create(_influxUrl);
+            }
             _client = builder;
             _writeApi = _client.GetWriteApi();
 
