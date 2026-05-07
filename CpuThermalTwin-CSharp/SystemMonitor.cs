@@ -3,9 +3,13 @@ using System.Diagnostics;
 using System.Linq;
 using System.Management;
 using System.Runtime.Versioning;
-using InfluxDB.Client;
-using InfluxDB.Client.Api.Domain;
-using InfluxDB.Client.Writes;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Client.Options;
+using MQTTnet.Client.Connecting;
 
 namespace CpuThermalTwin;
 
@@ -16,45 +20,41 @@ namespace CpuThermalTwin;
 [SupportedOSPlatform("windows")]
 public class SystemMonitor
 {
-    private readonly string _influxUrl;
-    private readonly string _bucket;
-    private readonly string _organization;
-    private readonly string _token;
-    private InfluxDBClient? _client;
-    private WriteApi? _writeApi;
+    private readonly string _mqttBroker;
+    private readonly int _mqttPort;
+    private readonly string _mqttTopic;
+    private IMqttClient? _mqttClient;
+    private MqttClientOptions? _mqttOptions;
 
-    public SystemMonitor(string influxUrl = "http://localhost:8181",
-                        string bucket = "system_monitor",
-                        string organization = "my-org",
-                        string token = "")
+    public SystemMonitor(string mqttBroker = "localhost",
+                        int mqttPort = 1883,
+                        string mqttTopic = "cpu/system/data")
     {
-        _influxUrl = influxUrl;
-        _bucket = bucket;
-        _organization = organization;
-        _token = token;
+        _mqttBroker = mqttBroker;
+        _mqttPort = mqttPort;
+        _mqttTopic = mqttTopic;
     }
 
     /// <summary>
-    /// Initialize InfluxDB client
+    /// Initialize MQTT client
     /// </summary>
     public void Initialize()
     {
         try
         {
-            // Initialize InfluxDB client with or without auth
-            InfluxDBClient? builder;
-            if (!string.IsNullOrEmpty(_token))
+            // Initialize MQTT client
+            var factory = new MqttFactory();
+            _mqttClient = factory.CreateMqttClient();
+
+            _mqttOptions = (MqttClientOptions?)new MqttClientOptionsBuilder()
+                .WithTcpServer(_mqttBroker, _mqttPort)
+                .Build();
+
+            var connectResult = _mqttClient.ConnectAsync(_mqttOptions).Result;
+            if (connectResult.ResultCode != MqttClientConnectResultCode.Success)
             {
-                // With authentication token
-                builder = InfluxDBClientFactory.Create(_influxUrl, _token.ToCharArray());
+                throw new Exception($"Failed to connect to MQTT broker: {connectResult.ResultCode}");
             }
-            else
-            {
-                // Without authentication (dev mode)
-                builder = InfluxDBClientFactory.Create(_influxUrl);
-            }
-            _client = builder;
-            _writeApi = _client.GetWriteApi();
             Console.WriteLine("✓ SystemMonitor initialized successfully");
         }
         catch (Exception ex)
@@ -69,21 +69,21 @@ public class SystemMonitor
     /// <summary>
     /// Monitors operating system information and performance
     /// </summary>
-    public void MonitorOperatingSystem()
+    public async void MonitorOperatingSystem()
     {
         try
         {
             // Get OS information
             var osInfo = GetOperatingSystemInfo();
-            SendOsMetrics(osInfo);
+            await Task.Run(() => SendOsMetrics(osInfo));
 
             // Get system performance
             var perfInfo = GetSystemPerformance();
-            SendSystemPerformanceMetrics(perfInfo);
+            await Task.Run(() => SendSystemPerformanceMetrics(perfInfo));
 
             // Get process information
             var processInfo = GetProcessInformation();
-            SendProcessMetrics(processInfo);
+            await Task.Run(() => SendProcessMetrics(processInfo));
 
         }
         catch (Exception ex)
@@ -92,26 +92,30 @@ public class SystemMonitor
         }
     }
 
-    private void SendProcessMetrics(ProcessInfo processInfo)
+    private async void SendProcessMetrics(ProcessInfo processInfo)
     {
         try
         {
-            var point = PointData.Measurement("process_info")
-                .Field("total_processes", processInfo.TotalProcesses)
-                .Field("total_threads", processInfo.Threads);
+            // Send overall process metrics
+            await PublishToMqtt("process_info", new
+            {
+                total_processes = processInfo.TotalProcesses,
+                total_threads = processInfo.Threads
+            });
 
-            _writeApi?.WritePoint(_bucket, _organization, point);
-
-            // Send top CPU consuming processes as separate points
+            // Send top CPU consuming processes as separate messages
             foreach (var process in processInfo.TopCpuProcesses)
             {
-                var processPoint = PointData.Measurement("top_processes")
-                    .Field("cpu_time_ms", process.CpuTime)
-                    .Field("memory_usage_bytes", process.MemoryUsage)
-                    .Tag("process_name", process.Name)
-                    .Tag("process_id", process.Id.ToString());
-
-                _writeApi?.WritePoint(_bucket, _organization, processPoint);
+                await PublishToMqtt("top_processes", new
+                {
+                    cpu_time_ms = process.CpuTime,
+                    memory_usage_bytes = process.MemoryUsage
+                }, new Dictionary<string, string>
+                {
+                    { "source", "csharp_system" },
+                    { "process_name", process.Name },
+                    { "process_id", process.Id.ToString() }
+                });
             }
         }
         catch (Exception ex)
@@ -120,18 +124,18 @@ public class SystemMonitor
         }
     }
 
-    private void SendSystemPerformanceMetrics(SystemPerformanceInfo perfInfo)
+    private async void SendSystemPerformanceMetrics(SystemPerformanceInfo perfInfo)
     {
         try
         {
-            var point = PointData.Measurement("system_performance")
-                .Field("cpu_usage_percent", perfInfo.CpuUsagePercent)
-                .Field("memory_usage_percent", perfInfo.MemoryUsagePercent)
-                .Field("disk_read_bytes_per_sec", perfInfo.DiskReadBytesPerSec)
-                .Field("disk_write_bytes_per_sec", perfInfo.DiskWriteBytesPerSec)
-                .Field("network_bytes_per_sec", perfInfo.NetworkBytesPerSec);
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("system_performance", new
+            {
+                cpu_usage_percent = perfInfo.CpuUsagePercent,
+                memory_usage_percent = perfInfo.MemoryUsagePercent,
+                disk_read_bytes_per_sec = perfInfo.DiskReadBytesPerSec,
+                disk_write_bytes_per_sec = perfInfo.DiskWriteBytesPerSec,
+                network_bytes_per_sec = perfInfo.NetworkBytesPerSec
+            });
         }
         catch (Exception ex)
         {
@@ -139,21 +143,24 @@ public class SystemMonitor
         }
     }
 
-    private void SendOsMetrics(OperatingSystemInfo osInfo)
+    private async void SendOsMetrics(OperatingSystemInfo osInfo)
     {
         try
         {
-            var point = PointData.Measurement("os_info")
-                .Field("total_memory_mb", osInfo.TotalVisibleMemorySize / 1024.0)
-                .Field("free_memory_mb", osInfo.FreePhysicalMemory / 1024.0)
-                .Field("memory_usage_percent", (osInfo.TotalVisibleMemorySize - osInfo.FreePhysicalMemory) * 100.0 / osInfo.TotalVisibleMemorySize)
-                .Field("total_virtual_memory_mb", osInfo.TotalVirtualMemorySize / 1024.0)
-                .Field("free_virtual_memory_mb", osInfo.FreeVirtualMemory / 1024.0)
-                .Tag("os_version", osInfo.Version)
-                .Tag("os_build", osInfo.BuildNumber)
-                .Tag("os_architecture", osInfo.Architecture);
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("os_info", new
+            {
+                total_memory_mb = osInfo.TotalVisibleMemorySize / 1024.0,
+                free_memory_mb = osInfo.FreePhysicalMemory / 1024.0,
+                memory_usage_percent = (osInfo.TotalVisibleMemorySize - osInfo.FreePhysicalMemory) * 100.0 / osInfo.TotalVisibleMemorySize,
+                total_virtual_memory_mb = osInfo.TotalVirtualMemorySize / 1024.0,
+                free_virtual_memory_mb = osInfo.FreeVirtualMemory / 1024.0
+            }, new Dictionary<string, string>
+            {
+                { "source", "csharp_system" },
+                { "os_version", osInfo.Version },
+                { "os_build", osInfo.BuildNumber },
+                { "os_architecture", osInfo.Architecture }
+            });
         }
         catch (Exception ex)
         {
@@ -622,7 +629,7 @@ public class SystemMonitor
     /// <summary>
     /// Sends comprehensive system data to InfluxDB in a single measurement (following ThermalMonitor pattern)
     /// </summary>
-    private void SendSystemData(OperatingSystemInfo osInfo,
+    private async void SendSystemData(OperatingSystemInfo osInfo,
                                SystemPerformanceInfo perfInfo,
                                ProcessInfo processInfo,
                                BatteryInfo batteryInfo,
@@ -646,62 +653,52 @@ public class SystemMonitor
             double memoryUsagePercent = osInfo.TotalVisibleMemorySize > 0 ?
                 (osInfo.TotalVisibleMemorySize - osInfo.FreePhysicalMemory) * 100.0 / osInfo.TotalVisibleMemorySize : 0;
 
-            var point = PointData.Measurement("system_monitor")
-                // OS Information
-                .Field("os_uptime_seconds", uptime.TotalSeconds)
-                .Field("os_total_memory_gb", totalMemoryGB)
-                .Field("os_available_memory_gb", availableMemoryGB)
-                .Field("os_memory_usage_percent", memoryUsagePercent)
+            var data = new
+            {
+                os_uptime_seconds = uptime.TotalSeconds,
+                os_total_memory_gb = totalMemoryGB,
+                os_available_memory_gb = availableMemoryGB,
+                os_memory_usage_percent = memoryUsagePercent,
+                cpu_load_percent = perfInfo.CpuUsagePercent,
+                memory_usage_percent = perfInfo.MemoryUsagePercent,
+                disk_read_bytes_per_sec = perfInfo.DiskReadBytesPerSec,
+                disk_write_bytes_per_sec = perfInfo.DiskWriteBytesPerSec,
+                network_bytes_per_sec = perfInfo.NetworkBytesPerSec,
+                total_processes = processInfo.TotalProcesses,
+                running_processes = processInfo.TotalProcesses,
+                threads_count = processInfo.Threads,
+                battery_remaining_capacity_percent = batteryInfo.RemainingCapacity,
+                battery_voltage_mv = batteryInfo.Voltage,
+                battery_status = batteryInfo.Status,
+                power_supply_total_watts = powerInfo.TotalPower,
+                power_supply_is_switching = powerInfo.IsSwitchingSupply ? 1 : 0,
+                system_events_last_hour = eventInfo.TotalEvents,
+                error_events_last_hour = eventInfo.ErrorEvents,
+                warning_events_last_hour = eventInfo.WarningEvents,
+                disk_total_size_gb = diskInfo.TotalSize / (1024.0 * 1024.0 * 1024.0),
+                disk_total_free_gb = diskInfo.TotalFreeSpace / (1024.0 * 1024.0 * 1024.0),
+                disk_overall_usage_percent = diskInfo.OverallUsagePercent,
+                cpu_temperature_celsius = cpuInfo.CpuTemperature,
+                cpu_fan_speed_rpm = cpuInfo.FanSpeed,
+                cpu_load_percentage = cpuInfo.LoadPercentage,
+                cpu_current_clock_mhz = cpuInfo.CurrentClockSpeed
+            };
 
-                // System Performance
-                .Field("cpu_load_percent", perfInfo.CpuUsagePercent)
-                .Field("memory_usage_percent", perfInfo.MemoryUsagePercent)
-                .Field("disk_read_bytes_per_sec", perfInfo.DiskReadBytesPerSec)
-                .Field("disk_write_bytes_per_sec", perfInfo.DiskWriteBytesPerSec)
-                .Field("network_bytes_per_sec", perfInfo.NetworkBytesPerSec)
+            var tags = new Dictionary<string, string>
+            {
+                { "source", "csharp_system" },
+                { "os_version", osInfo.Version },
+                { "os_build", osInfo.BuildNumber },
+                { "os_architecture", osInfo.Architecture },
+                { "cpu_name", cpuInfo.CpuName },
+                { "battery_status", batteryInfo.Status.ToString() },
+                { "power_supply_type", powerInfo.IsSwitchingSupply ? "switching" : "linear" }
+            };
 
-                // Process Information
-                .Field("total_processes", processInfo.TotalProcesses)
-                .Field("running_processes", processInfo.TotalProcesses) // Using total as running
-                .Field("threads_count", processInfo.Threads)
-
-                // Battery Information
-                .Field("battery_remaining_capacity_percent", batteryInfo.RemainingCapacity)
-                .Field("battery_voltage_mv", batteryInfo.Voltage)
-                .Field("battery_status", batteryInfo.Status)
-
-                // Power Information
-                .Field("power_supply_total_watts", powerInfo.TotalPower)
-                .Field("power_supply_is_switching", powerInfo.IsSwitchingSupply ? 1 : 0)
-
-                // Event Log Information
-                .Field("system_events_last_hour", eventInfo.TotalEvents)
-                .Field("error_events_last_hour", eventInfo.ErrorEvents)
-                .Field("warning_events_last_hour", eventInfo.WarningEvents)
-
-                // Disk Information
-                .Field("disk_total_size_gb", diskInfo.TotalSize / (1024.0 * 1024.0 * 1024.0))
-                .Field("disk_total_free_gb", diskInfo.TotalFreeSpace / (1024.0 * 1024.0 * 1024.0))
-                .Field("disk_overall_usage_percent", diskInfo.OverallUsagePercent)
-
-                // CPU Sensor Information
-                .Field("cpu_temperature_celsius", cpuInfo.CpuTemperature)
-                .Field("cpu_fan_speed_rpm", cpuInfo.FanSpeed)
-                .Field("cpu_load_percentage", cpuInfo.LoadPercentage)
-                .Field("cpu_current_clock_mhz", cpuInfo.CurrentClockSpeed)
-
-                // Tags for categorization
-                .Tag("os_version", osInfo.Version)
-                .Tag("os_build", osInfo.BuildNumber)
-                .Tag("os_architecture", osInfo.Architecture)
-                .Tag("cpu_name", cpuInfo.CpuName)
-                .Tag("battery_status", batteryInfo.Status.ToString())
-                .Tag("power_supply_type", powerInfo.IsSwitchingSupply ? "switching" : "linear");
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("system_monitor", data, tags);
 
             // Also send the cupthermal metrics for backward compatibility
-            SendCupThermalMetrics(osInfo, perfInfo, batteryInfo, powerInfo, diskInfo, cpuInfo);
+            await Task.Run(() => SendCupThermalMetrics(osInfo, perfInfo, batteryInfo, powerInfo, diskInfo, cpuInfo));
         }
         catch (Exception ex)
         {
@@ -709,19 +706,22 @@ public class SystemMonitor
         }
     }
 
-    private void SendBatteryMetrics(BatteryInfo info)
+    private async void SendBatteryMetrics(BatteryInfo info)
     {
         try
         {
-            var point = PointData.Measurement("battery_info")
-                .Field("remaining_capacity_percent", info.RemainingCapacity)
-                .Field("voltage_mv", info.Voltage)
-                .Field("status", info.Status)
-                .Tag("battery_name", info.Name)
-                .Tag("chemistry", info.Chemistry)
-                .Tag("battery_status", info.Status.ToString());
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("battery_info", new
+            {
+                remaining_capacity_percent = info.RemainingCapacity,
+                voltage_mv = info.Voltage,
+                status = info.Status
+            }, new Dictionary<string, string>
+            {
+                { "source", "csharp_system" },
+                { "battery_name", info.Name },
+                { "chemistry", info.Chemistry },
+                { "battery_status", info.Status.ToString() }
+            });
         }
         catch (Exception ex)
         {
@@ -729,18 +729,21 @@ public class SystemMonitor
         }
     }
 
-    private void SendPowerMetrics(PowerInfo info)
+    private async void SendPowerMetrics(PowerInfo info)
     {
         try
         {
-            var point = PointData.Measurement("power_info")
-                .Field("total_power_watts", info.TotalPower)
-                .Field("is_switching_supply", info.IsSwitchingSupply ? 1 : 0)
-                .Tag("power_supply_name", info.Name)
-                .Tag("status", info.Status)
-                .Tag("power_supply_type", info.IsSwitchingSupply ? "switching" : "linear");
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("power_info", new
+            {
+                total_power_watts = info.TotalPower,
+                is_switching_supply = info.IsSwitchingSupply ? 1 : 0
+            }, new Dictionary<string, string>
+            {
+                { "source", "csharp_system" },
+                { "power_supply_name", info.Name },
+                { "status", info.Status },
+                { "power_supply_type", info.IsSwitchingSupply ? "switching" : "linear" }
+            });
         }
         catch (Exception ex)
         {
@@ -748,27 +751,31 @@ public class SystemMonitor
         }
     }
 
-    private void SendEventLogMetrics(EventLogInfo info)
+    private async void SendEventLogMetrics(EventLogInfo info)
     {
         try
         {
-            var point = PointData.Measurement("event_logs")
-                .Field("total_events", info.TotalEvents)
-                .Field("error_events", info.ErrorEvents)
-                .Field("warning_events", info.WarningEvents)
-                .Field("information_events", info.InformationEvents);
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            // Send overall event log metrics
+            await PublishToMqtt("event_logs", new
+            {
+                total_events = info.TotalEvents,
+                error_events = info.ErrorEvents,
+                warning_events = info.WarningEvents,
+                information_events = info.InformationEvents
+            });
 
             // Send critical events
             foreach (var evt in info.RecentCriticalEvents)
             {
-                var eventPoint = PointData.Measurement("critical_events")
-                    .Field("event_time", (long)(evt.TimeGenerated - new DateTime(1970, 1, 1)).TotalSeconds)
-                    .Tag("source", evt.Source)
-                    .Tag("message", evt.Message.Length > 100 ? evt.Message.Substring(0, 100) + "..." : evt.Message);
-
-                _writeApi?.WritePoint(_bucket, _organization, eventPoint);
+                await PublishToMqtt("critical_events", new
+                {
+                    event_time = (long)(evt.TimeGenerated - new DateTime(1970, 1, 1)).TotalSeconds
+                }, new Dictionary<string, string>
+                {
+                    { "source", "csharp_system" },
+                    { "event_source", evt.Source },
+                    { "message", evt.Message.Length > 100 ? evt.Message.Substring(0, 100) + "..." : evt.Message }
+                });
             }
         }
         catch (Exception ex)
@@ -777,32 +784,35 @@ public class SystemMonitor
         }
     }
 
-    private void SendDiskMetrics(DiskInfo info)
+    private async void SendDiskMetrics(DiskInfo info)
     {
         try
         {
             // Send overall disk metrics
-            var point = PointData.Measurement("disk_overall")
-                .Field("total_size_gb", info.TotalSize / (1024.0 * 1024.0 * 1024.0))
-                .Field("used_space_gb", info.TotalUsedSpace / (1024.0 * 1024.0 * 1024.0))
-                .Field("free_space_gb", info.TotalFreeSpace / (1024.0 * 1024.0 * 1024.0))
-                .Field("usage_percent", info.OverallUsagePercent);
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("disk_overall", new
+            {
+                total_size_gb = info.TotalSize / (1024.0 * 1024.0 * 1024.0),
+                used_space_gb = info.TotalUsedSpace / (1024.0 * 1024.0 * 1024.0),
+                free_space_gb = info.TotalFreeSpace / (1024.0 * 1024.0 * 1024.0),
+                usage_percent = info.OverallUsagePercent
+            });
 
             // Send individual drive metrics
             foreach (var drive in info.Drives)
             {
-                var drivePoint = PointData.Measurement("disk_drives")
-                    .Field("size_gb", drive.Size / (1024.0 * 1024.0 * 1024.0))
-                    .Field("used_space_gb", drive.UsedSpace / (1024.0 * 1024.0 * 1024.0))
-                    .Field("free_space_gb", drive.FreeSpace / (1024.0 * 1024.0 * 1024.0))
-                    .Field("usage_percent", drive.UsagePercent)
-                    .Tag("drive_name", drive.Name)
-                    .Tag("volume_name", drive.VolumeName)
-                    .Tag("file_system", drive.FileSystem);
-
-                _writeApi?.WritePoint(_bucket, _organization, drivePoint);
+                await PublishToMqtt("disk_drives", new
+                {
+                    size_gb = drive.Size / (1024.0 * 1024.0 * 1024.0),
+                    used_space_gb = drive.UsedSpace / (1024.0 * 1024.0 * 1024.0),
+                    free_space_gb = drive.FreeSpace / (1024.0 * 1024.0 * 1024.0),
+                    usage_percent = drive.UsagePercent
+                }, new Dictionary<string, string>
+                {
+                    { "source", "csharp_system" },
+                    { "drive_name", drive.Name },
+                    { "volume_name", drive.VolumeName },
+                    { "file_system", drive.FileSystem }
+                });
             }
         }
         catch (Exception ex)
@@ -811,20 +821,23 @@ public class SystemMonitor
         }
     }
 
-    private void SendCpuSensorMetrics(CpuSensorInfo info)
+    private async void SendCpuSensorMetrics(CpuSensorInfo info)
     {
         try
         {
-            var point = PointData.Measurement("cpu_sensors")
-                .Field("temperature_celsius", info.CpuTemperature)
-                .Field("fan_speed_rpm", info.FanSpeed)
-                .Field("load_percentage", info.LoadPercentage)
-                .Field("current_clock_mhz", info.CurrentClockSpeed)
-                .Tag("cpu_name", info.CpuName)
-                .Tag("cores", info.NumberOfCores.ToString())
-                .Tag("logical_processors", info.NumberOfLogicalProcessors.ToString());
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("cpu_sensors", new
+            {
+                temperature_celsius = info.CpuTemperature,
+                fan_speed_rpm = info.FanSpeed,
+                load_percentage = info.LoadPercentage,
+                current_clock_mhz = info.CurrentClockSpeed
+            }, new Dictionary<string, string>
+            {
+                { "source", "csharp_system" },
+                { "cpu_name", info.CpuName },
+                { "cores", info.NumberOfCores.ToString() },
+                { "logical_processors", info.NumberOfLogicalProcessors.ToString() }
+            });
         }
         catch (Exception ex)
         {
@@ -832,7 +845,7 @@ public class SystemMonitor
         }
     }
 
-    private void SendCupThermalMetrics(OperatingSystemInfo osInfo,
+    private async void SendCupThermalMetrics(OperatingSystemInfo osInfo,
                                        SystemPerformanceInfo perfInfo,
                                        BatteryInfo batteryInfo,
                                        PowerInfo powerInfo,
@@ -841,30 +854,33 @@ public class SystemMonitor
     {
         try
         {
-            var point = PointData.Measurement("cupthermal")
-                .Field("cpu_temperature_celsius", cpuInfo.CpuTemperature)
-                .Field("fan_speed_rpm", cpuInfo.FanSpeed)
-                .Field("cpu_load_percentage", cpuInfo.LoadPercentage)
-                .Field("current_clock_mhz", cpuInfo.CurrentClockSpeed)
-                .Field("memory_usage_percent", perfInfo.MemoryUsagePercent)
-                .Field("disk_usage_percent", diskInfo.OverallUsagePercent)
-                .Field("disk_read_bytes_per_sec", perfInfo.DiskReadBytesPerSec)
-                .Field("disk_write_bytes_per_sec", perfInfo.DiskWriteBytesPerSec)
-                .Field("network_bytes_per_sec", perfInfo.NetworkBytesPerSec)
-                .Field("battery_remaining_capacity_percent", batteryInfo.RemainingCapacity)
-                .Field("battery_voltage_mv", batteryInfo.Voltage)
-                .Field("battery_status", batteryInfo.Status)
-                .Field("power_supply_total_watts", powerInfo.TotalPower)
-                .Field("power_supply_is_switching", powerInfo.IsSwitchingSupply ? 1 : 0)
-                .Field("total_disk_size_gb", diskInfo.TotalSize / (1024.0 * 1024.0 * 1024.0))
-                .Field("total_disk_free_gb", diskInfo.TotalFreeSpace / (1024.0 * 1024.0 * 1024.0))
-                .Field("total_processes", GetProcessInformation().TotalProcesses)
-                .Tag("os_version", osInfo.Version)
-                .Tag("os_build", osInfo.BuildNumber)
-                .Tag("cpu_name", cpuInfo.CpuName)
-                .Tag("os_architecture", osInfo.Architecture);
-
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            await PublishToMqtt("cupthermal", new
+            {
+                cpu_temperature_celsius = cpuInfo.CpuTemperature,
+                fan_speed_rpm = cpuInfo.FanSpeed,
+                cpu_load_percentage = cpuInfo.LoadPercentage,
+                current_clock_mhz = cpuInfo.CurrentClockSpeed,
+                memory_usage_percent = perfInfo.MemoryUsagePercent,
+                disk_usage_percent = diskInfo.OverallUsagePercent,
+                disk_read_bytes_per_sec = perfInfo.DiskReadBytesPerSec,
+                disk_write_bytes_per_sec = perfInfo.DiskWriteBytesPerSec,
+                network_bytes_per_sec = perfInfo.NetworkBytesPerSec,
+                battery_remaining_capacity_percent = batteryInfo.RemainingCapacity,
+                battery_voltage_mv = batteryInfo.Voltage,
+                battery_status = batteryInfo.Status,
+                power_supply_total_watts = powerInfo.TotalPower,
+                power_supply_is_switching = powerInfo.IsSwitchingSupply ? 1 : 0,
+                total_disk_size_gb = diskInfo.TotalSize / (1024.0 * 1024.0 * 1024.0),
+                total_disk_free_gb = diskInfo.TotalFreeSpace / (1024.0 * 1024.0 * 1024.0),
+                total_processes = GetProcessInformation().TotalProcesses
+            }, new Dictionary<string, string>
+            {
+                { "source", "csharp_system" },
+                { "os_version", osInfo.Version },
+                { "os_build", osInfo.BuildNumber },
+                { "cpu_name", cpuInfo.CpuName },
+                { "os_architecture", osInfo.Architecture }
+            });
         }
         catch (Exception ex)
         {
@@ -877,7 +893,7 @@ public class SystemMonitor
     /// <summary>
     /// Comprehensive system monitoring - monitors all components
     /// </summary>
-    public void MonitorAll()
+    public async void MonitorAll()
     {
         var osInfo = GetOperatingSystemInfo();
         var perfInfo = GetSystemPerformance();
@@ -889,17 +905,46 @@ public class SystemMonitor
         var cpuInfo = GetCpuSensorInformation();
 
         // Send all individual measurements for granular access
-        SendOsMetrics(osInfo);
-        SendSystemPerformanceMetrics(perfInfo);
-        SendProcessMetrics(processInfo);
-        SendBatteryMetrics(batteryInfo);
-        SendPowerMetrics(powerInfo);
-        SendEventLogMetrics(eventInfo);
-        SendDiskMetrics(diskInfo);
-        SendCpuSensorMetrics(cpuInfo);
+        await Task.Run(() => SendOsMetrics(osInfo));
+        await Task.Run(() => SendSystemPerformanceMetrics(perfInfo));
+        await Task.Run(() => SendProcessMetrics(processInfo));
+        await Task.Run(() => SendBatteryMetrics(batteryInfo));
+        await Task.Run(() => SendPowerMetrics(powerInfo));
+        await Task.Run(() => SendEventLogMetrics(eventInfo));
+        await Task.Run(() => SendDiskMetrics(diskInfo));
+        await Task.Run(() => SendCpuSensorMetrics(cpuInfo));
 
         // Also send comprehensive combined data
-        SendSystemData(osInfo, perfInfo, processInfo, batteryInfo, powerInfo, eventInfo, diskInfo, cpuInfo);
+        await Task.Run(() => SendSystemData(osInfo, perfInfo, processInfo, batteryInfo, powerInfo, eventInfo, diskInfo, cpuInfo));
+    }
+
+    /// <summary>
+    /// Helper method to publish data to MQTT
+    /// </summary>
+    private async Task PublishToMqtt(string measurement, object data, Dictionary<string, string>? tags = null)
+    {
+        try
+        {
+            var payload = new
+            {
+                measurement = measurement,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000000,
+                fields = data,
+                tags = tags ?? new Dictionary<string, string> { { "source", "csharp_system" } }
+            };
+
+            var json = JsonSerializer.Serialize(payload);
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic(_mqttTopic)
+                .WithPayload(json)
+                .Build();
+
+            await _mqttClient.PublishAsync(message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Error publishing {measurement} to MQTT: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -907,6 +952,9 @@ public class SystemMonitor
     /// </summary>
     public void Dispose()
     {
-        _client?.Dispose();
+        if (_mqttClient != null)
+        {
+            _mqttClient.DisconnectAsync().Wait();
+        }
     }
 }

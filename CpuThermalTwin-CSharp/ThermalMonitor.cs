@@ -4,9 +4,11 @@ using System.IO;
 using System.Management;
 using System.Threading;
 using System.Threading.Tasks;
-using InfluxDB.Client;
-using InfluxDB.Client.Api.Domain;
-using InfluxDB.Client.Writes;
+using System.Text.Json;
+using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Client.Options;
+using MQTTnet.Client.Connecting;
 
 namespace CpuThermalTwin;
 
@@ -17,50 +19,47 @@ public class ThermalMonitor
     private const float AMBIENT_TEMP = 35.0f;      // Base temperature (Celsius)
     private const float FALLBACK_MULTIPLIER = 0.42f;
 
-    // InfluxDB Configuration
-    private readonly string _influxUrl;
-    private readonly string _bucket;
-    private readonly string _organization;
-    private readonly string _token;
+    // MQTT Configuration
+    private readonly string _mqttBroker;
+    private readonly int _mqttPort;
+    private readonly string _mqttTopic;
 
-    private InfluxDBClient? _client;
-    private WriteApi? _writeApi;
+    private IMqttClient? _mqttClient;
+    private MqttClientOptions? _mqttOptions;
     private PerformanceCounter? _cpuCounter;
     private bool _isRunning;
 
-    public ThermalMonitor(string influxUrl = "http://localhost:8181", 
-                          string bucket = "cpu_twin",
-                          string organization = "my-org",
-                          string token = "m059h1pXi207pnn4ADkijJ3EIFa06TqR14IL4G326WkfReV_CjaTs7ukqoCCrKFbTk8X_-RmjnOiDRuaGpmMWQ==")
+    public ThermalMonitor(string mqttBroker = "localhost", 
+                          int mqttPort = 1883,
+                          string mqttTopic = "cpu/thermal/data")
     {
-        _influxUrl = influxUrl;
-        _bucket = bucket;
-        _organization = organization;
-        _token = token;
+        _mqttBroker = mqttBroker;
+        _mqttPort = mqttPort;
+        _mqttTopic = mqttTopic;
         _isRunning = false;
     }
 
     /// <summary>
-    /// Initializes the InfluxDB client and performance counters
+    /// Initializes the MQTT client and performance counters
     /// </summary>
     public void Initialize()
     {
         try
         {
-            // Initialize InfluxDB client with or without auth
-            InfluxDBClient? builder;
-            if (!string.IsNullOrEmpty(_token))
+            // Initialize MQTT client
+            var factory = new MqttFactory();
+            _mqttClient = factory.CreateMqttClient();
+
+            _mqttOptions = (MqttClientOptions)new MqttClientOptionsBuilder()
+                .WithTcpServer(_mqttBroker, _mqttPort)
+                .Build();
+           
+
+            var connectResult = _mqttClient.ConnectAsync(_mqttOptions).Result;
+            if (connectResult.ResultCode != MqttClientConnectResultCode.Success)
             {
-                // With authentication token
-                builder = InfluxDBClientFactory.Create(_influxUrl, _token.ToCharArray());
+                throw new Exception($"Failed to connect to MQTT broker: {connectResult.ResultCode}");
             }
-            else
-            {
-                // Without authentication (dev mode)
-                builder = InfluxDBClientFactory.Create(_influxUrl);
-            }
-            _client = builder;
-            _writeApi = _client.GetWriteApi();
 
             GetFanSpeed();
 
@@ -215,29 +214,46 @@ public class ThermalMonitor
     }
 
     /// <summary>
-    /// Sends thermal data to InfluxDB
+    /// Sends thermal data to MQTT broker
     /// </summary>
-    private void SendThermalData(float cpuLoad, float actualTemp, float predictedTemp)
+    private async void SendThermalData(float cpuLoad, float actualTemp, float predictedTemp)
     {
         try
         {
-            var point = PointData.Measurement("thermal_stats")
-                .Field("actual_temp", actualTemp)
-                .Field("predicted_temp", predictedTemp)
-                .Field("cpu_load", cpuLoad);
+            var data = new
+            {
+                measurement = "thermal_stats",
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000000, // nanoseconds
+                fields = new
+                {
+                    actual_temp = actualTemp,
+                    predicted_temp = predictedTemp,
+                    cpu_load = cpuLoad
+                },
+                tags = new
+                {
+                    source = "csharp_twin"
+                }
+            };
 
-            _writeApi?.WritePoint(_bucket, _organization, point);
+            var json = JsonSerializer.Serialize(data);
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic(_mqttTopic)
+                .WithPayload(json)
+                .Build();
+
+            await _mqttClient.PublishAsync(message);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"✗ Error sending data to InfluxDB: {ex.Message}");
+            Console.WriteLine($"✗ Error sending data to MQTT: {ex.Message}");
         }
     }
 
     /// <summary>
     /// Main monitoring loop - runs continuously until stopped
     /// </summary>
-    public void StartMonitoring(CancellationToken cancellationToken = default)
+    public async void StartMonitoring(CancellationToken cancellationToken = default)
     {
         _isRunning = true;
         Console.WriteLine("🚀 Digital Twin active... Press Ctrl+C to stop.\n");
@@ -251,8 +267,8 @@ public class ThermalMonitor
                 float actualTemp = GetCpuTemp(cpuLoad);
                 float predictedTemp = GetPredictedTemp(cpuLoad);
 
-                // Send to InfluxDB
-                SendThermalData(cpuLoad, actualTemp, predictedTemp);
+                // Send to MQTT
+                await Task.Run(() => SendThermalData(cpuLoad, actualTemp, predictedTemp), cancellationToken);
 
                 // Display output
                 Console.WriteLine(
@@ -261,7 +277,7 @@ public class ThermalMonitor
                 // Wait before next collection (1 second)
                 try
                 {
-                    Task.Delay(1000, cancellationToken).Wait(cancellationToken);
+                    await Task.Delay(1000, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -276,6 +292,10 @@ public class ThermalMonitor
         finally
         {
             _isRunning = false;
+            if (_mqttClient != null)
+            {
+                await _mqttClient.DisconnectAsync();
+            }
         }
     }
 
@@ -324,6 +344,9 @@ public class ThermalMonitor
     public void Dispose()
     {
         _cpuCounter?.Dispose();
-        _client?.Dispose();
+        if (_mqttClient != null)
+        {
+            _mqttClient.DisconnectAsync().Wait();
+        }
     }
 }

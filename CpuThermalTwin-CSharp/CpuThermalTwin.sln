@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36202.13 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CpuThermalTwin", "CpuThermalTwin.csproj", "{90A894DB-29A4-AAAB-7296-B70EC807EB81}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MqttToInfluxDbBridge", "..\MqttToInfluxDbBridge\MqttToInfluxDbBridge.csproj", "{C55E9C43-7624-9796-D38E-81BBCBB6983D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{90A894DB-29A4-AAAB-7296-B70EC807EB81}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{90A894DB-29A4-AAAB-7296-B70EC807EB81}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{90A894DB-29A4-AAAB-7296-B70EC807EB81}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{90A894DB-29A4-AAAB-7296-B70EC807EB81}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C55E9C43-7624-9796-D38E-81BBCBB6983D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C55E9C43-7624-9796-D38E-81BBCBB6983D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C55E9C43-7624-9796-D38E-81BBCBB6983D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C55E9C43-7624-9796-D38E-81BBCBB6983D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F77F4964-F009-4AE8-BC10-41462D0EBFE0}
+	EndGlobalSection
+EndGlobal

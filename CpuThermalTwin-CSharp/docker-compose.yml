@@ -14,6 +14,22 @@ services:
     # Uncomment the line below if you want to run with host networking to access local InfluxDB
     # network_mode: host
 
+  mqtt-influx-bridge:
+    build:
+      context: ../MqttToInfluxDbBridge
+      dockerfile: Dockerfile
+    container_name: mqtt-influx-bridge
+    depends_on:
+      - influxdb
+    networks:
+      - thermal-network
+    restart: unless-stopped
+    environment:
+      - MQTT_BROKER=mosquitto  # Assuming mosquitto service is added
+      - INFLUX_URL=http://influxdb:8181
+    # For local MQTT broker, use host networking
+    # network_mode: host
+
   influxdb:
     image: influxdb:3-core
     container_name: influxdb-3-core

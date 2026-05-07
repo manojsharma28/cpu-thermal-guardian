@@ -18,21 +18,18 @@ class Program
 
         try
         {
-            // Configuration
-            string influxUrl = "http://localhost:8181";
-            string bucket = "cpu_twin";
-            string organization = "my-org";  // InfluxDB requires non-empty org
-            
-            // TODO: Add your InfluxDB API token here (leave empty for dev mode without auth)
-            // Get token from InfluxDB UI: Settings > Tokens > Generate Token
-            string influxToken = "kC7seiVzLUvLUir_SafPfTpwwttRWD0Pr8kIwIORXc9wZIFvK0IMF9wR_-JM6K0zWRZ4J_bWc9CkPKvMzS1Jpw==";  // Replace with your actual token: "your-api-token-here"
+            // MQTT Configuration
+            string mqttBroker = "localhost";
+            int mqttPort = 1883;
+            string thermalTopic = "cpu/thermal/data";
+            string systemTopic = "cpu/system/data";
 
             // Initialize thermal monitor
-            _thermalMonitor = new ThermalMonitor(influxUrl, bucket, organization, influxToken);
+            _thermalMonitor = new ThermalMonitor(mqttBroker, mqttPort, thermalTopic);
             _thermalMonitor.Initialize();
 
             // Initialize system monitor
-            _systemMonitor = new SystemMonitor(influxUrl, bucket, organization, influxToken);
+            _systemMonitor = new SystemMonitor(mqttBroker, mqttPort, systemTopic);
             _systemMonitor.Initialize();
 
             // Setup graceful shutdown
@@ -81,7 +78,7 @@ class Program
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                _systemMonitor?.MonitorAll();
+                Task.Run(() => _systemMonitor?.MonitorAll()).Wait(cancellationToken);
                 Task.Delay(5000, cancellationToken).Wait(cancellationToken); // Monitor every 5 seconds
             }
         }
