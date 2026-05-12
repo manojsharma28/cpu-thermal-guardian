@@ -1,8 +1,12 @@
 using System;
+using System.IO;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using CpuThermalTwin;
 
+[SupportedOSPlatform("windows")]
 class Program
 {
     private static ThermalMonitor? _thermalMonitor;
@@ -28,8 +32,9 @@ class Program
             _thermalMonitor = new ThermalMonitor(mqttBroker, mqttPort, thermalTopic);
             _thermalMonitor.Initialize();
 
-            // Initialize system monitor
-            _systemMonitor = new SystemMonitor(mqttBroker, mqttPort, systemTopic);
+            // Load metric settings and initialize system monitor
+            var metricsConfig = LoadMetricsConfig(Path.Combine(AppContext.BaseDirectory, "metric-config.json"));
+            _systemMonitor = new SystemMonitor(mqttBroker, mqttPort, systemTopic, metricsConfig);
             _systemMonitor.Initialize();
 
             // Setup graceful shutdown
@@ -89,6 +94,35 @@ class Program
         catch (Exception ex)
         {
             Console.WriteLine($"❌ System monitoring error: {ex.Message}");
+        }
+    }
+
+    private static MetricsConfig LoadMetricsConfig(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"⚠️ Metric config not found at {path}; using default metric settings.");
+                return new MetricsConfig();
+            }
+
+            var json = File.ReadAllText(path);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var config = JsonSerializer.Deserialize<MetricsConfig>(json, options);
+            if (config == null)
+            {
+                Console.WriteLine("⚠️ Metric config could not be parsed; using default metric settings.");
+                return new MetricsConfig();
+            }
+
+            Console.WriteLine($"✓ Loaded metric config from {path}");
+            return config;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Error loading metric config: {ex.Message}. Using default metric settings.");
+            return new MetricsConfig();
         }
     }
 }

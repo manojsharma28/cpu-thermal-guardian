@@ -23,16 +23,19 @@ public class SystemMonitor
     private readonly string _mqttBroker;
     private readonly int _mqttPort;
     private readonly string _mqttTopic;
+    private readonly MetricsConfig _metricsConfig;
     private IMqttClient? _mqttClient;
     private MqttClientOptions? _mqttOptions;
 
     public SystemMonitor(string mqttBroker = "localhost",
                         int mqttPort = 1883,
-                        string mqttTopic = "cpu/system/data")
+                        string mqttTopic = "cpu/system/data",
+                        MetricsConfig? metricsConfig = null)
     {
         _mqttBroker = mqttBroker;
         _mqttPort = mqttPort;
         _mqttTopic = mqttTopic;
+        _metricsConfig = metricsConfig ?? new MetricsConfig();
     }
 
     /// <summary>
@@ -96,12 +99,23 @@ public class SystemMonitor
     {
         try
         {
-            // Send overall process metrics
-            await PublishToMqtt("process_info", new
+            var fields = new Dictionary<string, object?>();
+
+            if (IsEnabled(_metricsConfig.SystemMetrics, "total_processes"))
+                fields["total_processes"] = processInfo.TotalProcesses;
+            if (IsEnabled(_metricsConfig.SystemMetrics, "total_threads"))
+                fields["total_threads"] = processInfo.Threads;
+
+            if (fields.Count == 0 && _metricsConfig.SystemMetrics.Count > 0)
+                return;
+
+            if (fields.Count == 0)
             {
-                total_processes = processInfo.TotalProcesses,
-                total_threads = processInfo.Threads
-            });
+                fields["total_processes"] = processInfo.TotalProcesses;
+                fields["total_threads"] = processInfo.Threads;
+            }
+
+            await PublishToMqtt("process_info", fields);
 
             // Send top CPU consuming processes as separate messages
             foreach (var process in processInfo.TopCpuProcesses)
@@ -128,14 +142,35 @@ public class SystemMonitor
     {
         try
         {
-            await PublishToMqtt("system_performance", new
+            var fields = new Dictionary<string, object?>();
+
+            if (IsEnabled(_metricsConfig.SystemMetrics, "cpu_usage_percent"))
+                fields["cpu_usage_percent"] = perfInfo.CpuUsagePercent;
+            if (IsEnabled(_metricsConfig.SystemMetrics, "memory_usage_percent"))
+                fields["memory_usage_percent"] = perfInfo.MemoryUsagePercent;
+            if (IsEnabled(_metricsConfig.SystemMetrics, "disk_read_bytes_per_sec"))
+                fields["disk_read_bytes_per_sec"] = perfInfo.DiskReadBytesPerSec;
+            if (IsEnabled(_metricsConfig.SystemMetrics, "disk_write_bytes_per_sec"))
+                fields["disk_write_bytes_per_sec"] = perfInfo.DiskWriteBytesPerSec;
+            if (IsEnabled(_metricsConfig.SystemMetrics, "network_bytes_per_sec"))
+                fields["network_bytes_per_sec"] = perfInfo.NetworkBytesPerSec;
+
+            if (fields.Count == 0 && _metricsConfig.SystemMetrics.Count > 0)
+                return;
+
+            if (fields.Count == 0)
             {
-                cpu_usage_percent = perfInfo.CpuUsagePercent,
-                memory_usage_percent = perfInfo.MemoryUsagePercent,
-                disk_read_bytes_per_sec = perfInfo.DiskReadBytesPerSec,
-                disk_write_bytes_per_sec = perfInfo.DiskWriteBytesPerSec,
-                network_bytes_per_sec = perfInfo.NetworkBytesPerSec
-            });
+                fields = new Dictionary<string, object?>
+                {
+                    { "cpu_usage_percent", perfInfo.CpuUsagePercent },
+                    { "memory_usage_percent", perfInfo.MemoryUsagePercent },
+                    { "disk_read_bytes_per_sec", perfInfo.DiskReadBytesPerSec },
+                    { "disk_write_bytes_per_sec", perfInfo.DiskWriteBytesPerSec },
+                    { "network_bytes_per_sec", perfInfo.NetworkBytesPerSec }
+                };
+            }
+
+            await PublishToMqtt("system_performance", fields);
         }
         catch (Exception ex)
         {
@@ -147,20 +182,58 @@ public class SystemMonitor
     {
         try
         {
-            await PublishToMqtt("os_info", new
+            var fields = new Dictionary<string, object?>();
+            var tags = new Dictionary<string, string> { { "source", "csharp_system" } };
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "os_total_memory_mb"))
+                fields["os_total_memory_mb"] = osInfo.TotalVisibleMemorySize / 1024.0;
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "os_free_memory_mb"))
+                fields["os_free_memory_mb"] = osInfo.FreePhysicalMemory / 1024.0;
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "os_memory_usage_percent") && osInfo.TotalVisibleMemorySize > 0)
+                fields["os_memory_usage_percent"] = (osInfo.TotalVisibleMemorySize - osInfo.FreePhysicalMemory) * 100.0 / osInfo.TotalVisibleMemorySize;
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "total_virtual_memory_mb"))
+                fields["total_virtual_memory_mb"] = osInfo.TotalVirtualMemorySize / 1024.0;
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "free_virtual_memory_mb"))
+                fields["free_virtual_memory_mb"] = osInfo.FreeVirtualMemory / 1024.0;
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "boot_uptime_seconds"))
             {
-                total_memory_mb = osInfo.TotalVisibleMemorySize / 1024.0,
-                free_memory_mb = osInfo.FreePhysicalMemory / 1024.0,
-                memory_usage_percent = (osInfo.TotalVisibleMemorySize - osInfo.FreePhysicalMemory) * 100.0 / osInfo.TotalVisibleMemorySize,
-                total_virtual_memory_mb = osInfo.TotalVirtualMemorySize / 1024.0,
-                free_virtual_memory_mb = osInfo.FreeVirtualMemory / 1024.0
-            }, new Dictionary<string, string>
+                if (DateTime.TryParse(osInfo.LastBootUpTime, out DateTime bootTime))
+                {
+                    fields["boot_uptime_seconds"] = (DateTime.Now - bootTime).TotalSeconds;
+                }
+            }
+
+            if (IsEnabled(_metricsConfig.OsMetrics, "os_version"))
+                tags["os_version"] = osInfo.Version;
+            if (IsEnabled(_metricsConfig.OsMetrics, "os_build"))
+                tags["os_build"] = osInfo.BuildNumber;
+            if (IsEnabled(_metricsConfig.OsMetrics, "os_architecture"))
+                tags["os_architecture"] = osInfo.Architecture;
+
+            if (fields.Count == 0 && _metricsConfig.OsMetrics.Count > 0)
+                return;
+
+            if (fields.Count == 0)
             {
-                { "source", "csharp_system" },
-                { "os_version", osInfo.Version },
-                { "os_build", osInfo.BuildNumber },
-                { "os_architecture", osInfo.Architecture }
-            });
+                fields = new Dictionary<string, object?>
+                {
+                    { "total_memory_mb", osInfo.TotalVisibleMemorySize / 1024.0 },
+                    { "free_memory_mb", osInfo.FreePhysicalMemory / 1024.0 },
+                    { "memory_usage_percent", osInfo.TotalVisibleMemorySize > 0 ? (osInfo.TotalVisibleMemorySize - osInfo.FreePhysicalMemory) * 100.0 / osInfo.TotalVisibleMemorySize : 0 },
+                    { "total_virtual_memory_mb", osInfo.TotalVirtualMemorySize / 1024.0 },
+                    { "free_virtual_memory_mb", osInfo.FreeVirtualMemory / 1024.0 }
+                };
+                tags["os_version"] = osInfo.Version;
+                tags["os_build"] = osInfo.BuildNumber;
+                tags["os_architecture"] = osInfo.Architecture;
+            }
+
+            await PublishToMqtt("os_info", fields, tags);
         }
         catch (Exception ex)
         {
@@ -622,6 +695,16 @@ public class SystemMonitor
         return "";
     }
 
+    private bool IsEnabled(Dictionary<string, bool> metricSettings, string metricKey)
+    {
+        return metricSettings.Count == 0 || (metricSettings.TryGetValue(metricKey, out bool enabled) && enabled);
+    }
+
+    private bool HasAnySelection(Dictionary<string, bool> metricSettings)
+    {
+        return metricSettings.Count == 0 || metricSettings.Values.Any(v => v);
+    }
+
     #endregion
 
     #region InfluxDB Sending Methods
@@ -825,19 +908,36 @@ public class SystemMonitor
     {
         try
         {
-            await PublishToMqtt("cpu_sensors", new
-            {
-                temperature_celsius = info.CpuTemperature,
-                fan_speed_rpm = info.FanSpeed,
-                load_percentage = info.LoadPercentage,
-                current_clock_mhz = info.CurrentClockSpeed
-            }, new Dictionary<string, string>
+            var fields = new Dictionary<string, object?>();
+            var tags = new Dictionary<string, string>
             {
                 { "source", "csharp_system" },
                 { "cpu_name", info.CpuName },
                 { "cores", info.NumberOfCores.ToString() },
                 { "logical_processors", info.NumberOfLogicalProcessors.ToString() }
-            });
+            };
+
+            if (IsEnabled(_metricsConfig.CpuMetrics, "cpu_temperature_celsius"))
+                fields["cpu_temperature_celsius"] = info.CpuTemperature;
+            if (IsEnabled(_metricsConfig.CpuMetrics, "cpu_fan_speed_rpm"))
+                fields["cpu_fan_speed_rpm"] = info.FanSpeed;
+            if (IsEnabled(_metricsConfig.CpuMetrics, "load_percentage"))
+                fields["load_percentage"] = info.LoadPercentage;
+            if (IsEnabled(_metricsConfig.CpuMetrics, "current_clock_mhz"))
+                fields["current_clock_mhz"] = info.CurrentClockSpeed;
+
+            if (fields.Count == 0 && _metricsConfig.CpuMetrics.Count > 0)
+                return;
+
+            if (fields.Count == 0)
+            {
+                fields["cpu_temperature_celsius"] = info.CpuTemperature;
+                fields["cpu_fan_speed_rpm"] = info.FanSpeed;
+                fields["load_percentage"] = info.LoadPercentage;
+                fields["current_clock_mhz"] = info.CurrentClockSpeed;
+            }
+
+            await PublishToMqtt("cpu_sensors", fields, tags);
         }
         catch (Exception ex)
         {
@@ -904,18 +1004,24 @@ public class SystemMonitor
         var diskInfo = GetDiskInformation();
         var cpuInfo = GetCpuSensorInformation();
 
-        // Send all individual measurements for granular access
-        await Task.Run(() => SendOsMetrics(osInfo));
-        await Task.Run(() => SendSystemPerformanceMetrics(perfInfo));
-        await Task.Run(() => SendProcessMetrics(processInfo));
-        await Task.Run(() => SendBatteryMetrics(batteryInfo));
-        await Task.Run(() => SendPowerMetrics(powerInfo));
-        await Task.Run(() => SendEventLogMetrics(eventInfo));
-        await Task.Run(() => SendDiskMetrics(diskInfo));
-        await Task.Run(() => SendCpuSensorMetrics(cpuInfo));
+        // Send OS and system metrics based on config
+        if (HasAnySelection(_metricsConfig.OsMetrics))
+            await Task.Run(() => SendOsMetrics(osInfo));
 
-        // Also send comprehensive combined data
-        await Task.Run(() => SendSystemData(osInfo, perfInfo, processInfo, batteryInfo, powerInfo, eventInfo, diskInfo, cpuInfo));
+        if (HasAnySelection(_metricsConfig.SystemMetrics))
+        {
+            await Task.Run(() => SendSystemPerformanceMetrics(perfInfo));
+            await Task.Run(() => SendProcessMetrics(processInfo));
+        }
+
+        if (HasAnySelection(_metricsConfig.CpuMetrics))
+            await Task.Run(() => SendCpuSensorMetrics(cpuInfo));
+
+        // Send combined measurement only when any configured category is enabled
+        if (HasAnySelection(_metricsConfig.OsMetrics) || HasAnySelection(_metricsConfig.SystemMetrics) || HasAnySelection(_metricsConfig.CpuMetrics))
+        {
+            await Task.Run(() => SendSystemData(osInfo, perfInfo, processInfo, batteryInfo, powerInfo, eventInfo, diskInfo, cpuInfo));
+        }
     }
 
     /// <summary>

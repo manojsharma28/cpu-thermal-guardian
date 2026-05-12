@@ -1,0 +1,76 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="https://github.com/avaloniaui/design"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:CpuThermalTwinConfigurator"
+        x:Class="CpuThermalTwinConfigurator.MainWindow"
+        Title="CPU Thermal Twin Configurator"
+        Width="750" Height="520"
+        mc:Ignorable="d">
+  <Design.DataContext>
+    <vm:MainWindowViewModel/>
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*" Margin="16">
+    <TextBlock Text="Metric Selection" FontSize="22" FontWeight="Bold" />
+
+    <StackPanel Grid.Row="1" Spacing="16">
+      <TextBlock Text="Choose which metrics should be enabled for the CPU Thermal Twin system monitor." TextWrapping="Wrap"/>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button Content="Save Configuration" Command="{Binding SaveCommand}" Width="150" />
+        <Button Content="Load Configuration" Command="{Binding LoadCommand}" Width="150" />
+        <Button Content="Reset Defaults" Command="{Binding ResetCommand}" Width="150" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="6" Padding="10" Width="235">
+          <StackPanel>
+            <TextBlock Text="OS Metrics" FontWeight="Bold" Margin="0 0 0 8" />
+            <ScrollViewer Height="320">
+              <ItemsControl ItemsSource="{Binding OsMetrics}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
+
+        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="6" Padding="10" Width="235">
+          <StackPanel>
+            <TextBlock Text="System Metrics" FontWeight="Bold" Margin="0 0 0 8" />
+            <ScrollViewer Height="320">
+              <ItemsControl ItemsSource="{Binding SystemMetrics}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
+
+        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="6" Padding="10" Width="235">
+          <StackPanel>
+            <TextBlock Text="CPU Metrics" FontWeight="Bold" Margin="0 0 0 8" />
+            <ScrollViewer Height="320">
+              <ItemsControl ItemsSource="{Binding CpuMetrics}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <TextBlock Text="Status:" FontWeight="Bold"/>
+      <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap"/> 
+    </StackPanel>
+  </Grid>
+</Window>

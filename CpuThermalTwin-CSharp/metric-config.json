@@ -1,0 +1,30 @@
+{
+  "OsMetrics": {
+    "os_version": true,
+    "os_architecture": true,
+    "os_build": true,
+    "boot_uptime_seconds": true,
+    "os_total_memory_mb": true,
+    "os_free_memory_mb": true,
+    "os_memory_usage_percent": true,
+    "total_virtual_memory_mb": true,
+    "free_virtual_memory_mb": true
+  },
+  "SystemMetrics": {
+    "cpu_usage_percent": true,
+    "memory_usage_percent": true,
+    "disk_read_bytes_per_sec": true,
+    "disk_write_bytes_per_sec": true,
+    "network_bytes_per_sec": true,
+    "total_processes": true,
+    "total_threads": true,
+    "system_events_last_hour": true
+  },
+  "CpuMetrics": {
+    "cpu_temperature_celsius": true,
+    "cpu_fan_speed_rpm": true,
+    "load_percentage": true,
+    "current_clock_mhz": true,
+    "number_of_cores": true
+  }
+}
