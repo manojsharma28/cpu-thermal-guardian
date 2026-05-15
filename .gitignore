@@ -44,3 +44,7 @@ data/
 
 # Docker
 .dockerignore
+
+# Ignore bin and obj folders
+bin/
+obj/

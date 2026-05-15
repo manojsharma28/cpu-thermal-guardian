@@ -15,6 +15,9 @@ namespace CpuThermalTwinConfigurator
     {
         private const string ConfigFileName = "metric-config.json";
         private string _statusMessage = "Ready to configure metrics.";
+        private bool _isOsMetricsOpen;
+        private bool _isSystemMetricsOpen;
+        private bool _isCpuMetricsOpen;
 
         public ObservableCollection<MetricOption> OsMetrics { get; } = new();
         public ObservableCollection<MetricOption> SystemMetrics { get; } = new();
@@ -30,6 +33,28 @@ namespace CpuThermalTwinConfigurator
             set => SetProperty(ref _statusMessage, value);
         }
 
+        public bool IsOsMetricsOpen
+        {
+            get => _isOsMetricsOpen;
+            set => SetProperty(ref _isOsMetricsOpen, value);
+        }
+
+        public bool IsSystemMetricsOpen
+        {
+            get => _isSystemMetricsOpen;
+            set => SetProperty(ref _isSystemMetricsOpen, value);
+        }
+
+        public bool IsCpuMetricsOpen
+        {
+            get => _isCpuMetricsOpen;
+            set => SetProperty(ref _isCpuMetricsOpen, value);
+        }
+
+        public string OsMetricsButtonText => $"OS Metrics ({OsMetrics.Count(m => m.IsSelected)}/{OsMetrics.Count})";
+        public string SystemMetricsButtonText => $"System Metrics ({SystemMetrics.Count(m => m.IsSelected)}/{SystemMetrics.Count})";
+        public string CpuMetricsButtonText => $"CPU Metrics ({CpuMetrics.Count(m => m.IsSelected)}/{CpuMetrics.Count})";
+
         public MainWindowViewModel()
         {
             InitializeMetricCollections();
@@ -39,6 +64,45 @@ namespace CpuThermalTwinConfigurator
         }
 
         private void InitializeMetricCollections()
+        {
+            try
+            {
+                var path = GetConfigPath();
+                if (File.Exists(path))
+                {
+                    var json = File.ReadAllText(path);
+                    var config = JsonSerializer.Deserialize<MetricsConfig>(json);
+
+                    if (config != null)
+                    {
+                        LoadMetricNames(OsMetrics, config.OsMetrics.Keys);
+                        LoadMetricNames(SystemMetrics, config.SystemMetrics.Keys);
+                        LoadMetricNames(CpuMetrics, config.CpuMetrics.Keys);
+                        WireUpPropertyChanges();
+                        return;
+                    }
+                }
+
+                // Fallback to default values if the file doesn't exist or is invalid
+                LoadDefaultMetrics();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error initializing metrics: {ex.Message}";
+                LoadDefaultMetrics();
+            }
+        }
+
+        private void LoadMetricNames(ObservableCollection<MetricOption> collection, IEnumerable<string> names)
+        {
+            collection.Clear();
+            foreach (var name in names)
+            {
+                collection.Add(new MetricOption { Name = name });
+            }
+        }
+
+        private void LoadDefaultMetrics()
         {
             OsMetrics.Clear();
             SystemMetrics.Clear();
@@ -64,6 +128,24 @@ namespace CpuThermalTwinConfigurator
             CpuMetrics.Add(new MetricOption { Name = "CPU load percentage" });
             CpuMetrics.Add(new MetricOption { Name = "CPU clock speed MHz" });
             CpuMetrics.Add(new MetricOption { Name = "CPU core count" });
+
+            WireUpPropertyChanges();
+        }
+
+        private void WireUpPropertyChanges()
+        {
+            foreach (var metric in OsMetrics.Concat(SystemMetrics).Concat(CpuMetrics))
+            {
+                metric.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(MetricOption.IsSelected))
+                    {
+                        OnPropertyChanged(nameof(OsMetricsButtonText));
+                        OnPropertyChanged(nameof(SystemMetricsButtonText));
+                        OnPropertyChanged(nameof(CpuMetricsButtonText));
+                    }
+                };
+            }
         }
 
         private void SaveConfig()

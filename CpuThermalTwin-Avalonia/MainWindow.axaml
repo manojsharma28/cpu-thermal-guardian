@@ -23,50 +23,74 @@
       </StackPanel>
 
       <StackPanel Orientation="Horizontal" Spacing="12">
-        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="6" Padding="10" Width="235">
-          <StackPanel>
-            <TextBlock Text="OS Metrics" FontWeight="Bold" Margin="0 0 0 8" />
-            <ScrollViewer Height="320">
-              <ItemsControl ItemsSource="{Binding OsMetrics}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-          </StackPanel>
-        </Border>
+        <!-- OS Metrics Dropdown -->
+        <StackPanel Width="230">
+          <Button x:Name="OsMetricsButton" Width="230" Height="40" Click="OnOsMetricsButtonClick">
+            <TextBlock Text="{Binding OsMetricsButtonText}" TextAlignment="Center"/>
+          </Button>
+          <Popup IsOpen="{Binding IsOsMetricsOpen, Mode=TwoWay}"
+                 PlacementMode="Bottom"
+                 PlacementTarget="{Binding #OsMetricsButton}">
+            <Border Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4">
+              <StackPanel Margin="0" Width="230">
+                <TextBlock Text="OS Metrics" FontWeight="Bold" Margin="8 8 8 4" />
+                <ListBox ItemsSource="{Binding OsMetrics}" Height="300" Margin="0 0 0 8">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="4"/>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+          </Popup>
+        </StackPanel>
 
-        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="6" Padding="10" Width="235">
-          <StackPanel>
-            <TextBlock Text="System Metrics" FontWeight="Bold" Margin="0 0 0 8" />
-            <ScrollViewer Height="320">
-              <ItemsControl ItemsSource="{Binding SystemMetrics}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-          </StackPanel>
-        </Border>
+        <!-- System Metrics Dropdown -->
+        <StackPanel Width="230">
+          <Button x:Name="SystemMetricsButton" Width="230" Height="40" Click="OnSystemMetricsButtonClick">
+            <TextBlock Text="{Binding SystemMetricsButtonText}" TextAlignment="Center"/>
+          </Button>
+          <Popup IsOpen="{Binding IsSystemMetricsOpen, Mode=TwoWay}"
+                 PlacementMode="Bottom"
+                 PlacementTarget="{Binding #SystemMetricsButton}">
+            <Border Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4">
+              <StackPanel Margin="0" Width="230">
+                <TextBlock Text="System Metrics" FontWeight="Bold" Margin="8 8 8 4" />
+                <ListBox ItemsSource="{Binding SystemMetrics}" Height="300" Margin="0 0 0 8">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="4"/>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+          </Popup>
+        </StackPanel>
 
-        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="6" Padding="10" Width="235">
-          <StackPanel>
-            <TextBlock Text="CPU Metrics" FontWeight="Bold" Margin="0 0 0 8" />
-            <ScrollViewer Height="320">
-              <ItemsControl ItemsSource="{Binding CpuMetrics}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-          </StackPanel>
-        </Border>
+        <!-- CPU Metrics Dropdown -->
+        <StackPanel Width="230">
+          <Button x:Name="CpuMetricsButton" Width="230" Height="40" Click="OnCpuMetricsButtonClick">
+            <TextBlock Text="{Binding CpuMetricsButtonText}" TextAlignment="Center"/>
+          </Button>
+          <Popup IsOpen="{Binding IsCpuMetricsOpen, Mode=TwoWay}"
+                 PlacementMode="Bottom"
+                 PlacementTarget="{Binding #CpuMetricsButton}">
+            <Border Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4">
+              <StackPanel Margin="0" Width="230">
+                <TextBlock Text="CPU Metrics" FontWeight="Bold" Margin="8 8 8 4" />
+                <ListBox ItemsSource="{Binding CpuMetrics}" Height="300" Margin="0 0 0 8">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="4"/>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+          </Popup>
+        </StackPanel>
       </StackPanel>
 
       <TextBlock Text="Status:" FontWeight="Bold"/>

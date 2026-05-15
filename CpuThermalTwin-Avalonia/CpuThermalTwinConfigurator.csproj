@@ -14,4 +14,10 @@
 
 
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="metric-config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>
