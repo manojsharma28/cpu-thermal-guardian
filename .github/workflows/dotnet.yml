@@ -20,10 +20,10 @@ jobs:
         dotnet-version: 8.0.x
 
     - name: Restore dependencies
-      run: dotnet restore CpuThermalTwin-Avalonia/CpuThermalTwin-Avalonia.csproj
+      run: dotnet restore CpuThermalTwin-Avalonia/CpuThermalTwinConfigurator.csproj
 
     - name: Build project
-      run: dotnet build CpuThermalTwin-Avalonia/CpuThermalTwin-Avalonia.csproj --configuration Release --no-restore
+      run: dotnet build CpuThermalTwin-Avalonia/CpuThermalTwinConfigurator.csproj --configuration Release --no-restore
 
     - name: Run tests
       run: dotnet test --no-build --verbosity normal
