@@ -1,0 +1,26 @@
+{
+  "OsMetrics": {
+    "OS version": true,
+    "OS architecture": false,
+    "Boot uptime": true,
+    "OS build number": false,
+    "Installed culture": true,
+    "Installed device": true,
+    "Installed theme": true,
+    "Installed version": true,
+    "Installed memory": true,
+    "Installed trap": true,
+    "bad sector": true,
+    "BIOS": true,
+    "Sleep Time": true
+
+  },
+  "SystemMetrics": {
+    "CPU usage percent": true,
+    "Memory usage percent": false
+  },
+  "CpuMetrics": {
+    "CPU temperature": true,
+    "CPU fan speed": false
+  }
+}
