@@ -48,3 +48,42 @@ data/
 # Ignore bin and obj folders
 bin/
 obj/
+.dart_tool/
+build/
+
+/.flutter-plugins
+/.flutter-plugins-dependencies
+/ios/Pods/
+
+**/bin/
+**/obj/
+*.user
+*.vs/*
+
+# Flutter / Dart
+.packages
+pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+
+# Android/Gradle
+/.gradle/
+**/local.properties
+
+# IntelliJ / Android Studio
+*.iml
+.idea/workspace.xml
+.idea/libraries
+
+# macOS
+*.app
+
+# Windows
+*.exe
+*.dll
+*.pdb
+
+# Logs and temp
+*.log
+*.tmp
