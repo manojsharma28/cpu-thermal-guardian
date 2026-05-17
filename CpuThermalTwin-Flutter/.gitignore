@@ -1,0 +1,24 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Visual Studio Code
+.vscode/
+
+# Mac
+*.DS_Store
+
+# Obfuscation
+*.symbols
+
+# Generated
+pubspec.lock
+.idea/
+
+# Local configuration
+*.iml
